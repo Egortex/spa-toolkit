@@ -6,6 +6,16 @@ on:
       - "spa-router-v*"
       - "bind-form-v*"
       - "dom-template-v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Пакет для публикации"
+        type: choice
+        required: true
+        options:
+          - spa-router
+          - bind-form
+          - dom-template
 
 jobs:
   publish:
@@ -21,11 +31,15 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - name: Resolve package from tag
+      - name: Resolve package
         id: package
         run: |
-          tag="${GITHUB_REF_NAME}"
-          name="${tag%-v*}"
+          if [ -n "${{ inputs.package }}" ]; then
+            name="${{ inputs.package }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            name="${tag%-v*}"
+          fi
           echo "name=${name}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
