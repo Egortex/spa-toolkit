@@ -1,5 +1,5 @@
 {
-	"name": "spa-router",
+	"name": "@chepchik/spa-router",
 	"version": "0.1.0",
 	"description": "Lightweight client-side SPA router: link interception, History API, lazy-loaded pages, nested layouts, loaders, guards, caching, prefetch, scroll restoration and View Transitions.",
 	"type": "module",

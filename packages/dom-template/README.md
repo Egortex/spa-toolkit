@@ -11,13 +11,13 @@
 ## Установка
 
 ```sh
-npm install dom-template
+npm install @chepchik/dom-template
 ```
 
 ## Использование
 
 ```ts
-import { mountTemplate } from "dom-template";
+import { mountTemplate } from "@chepchik/dom-template";
 
 interface Refs {
 	title: HTMLHeadingElement;

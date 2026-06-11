@@ -1,5 +1,5 @@
 {
-	"name": "bind-form",
+	"name": "@chepchik/bind-form",
 	"version": "0.1.0",
 	"description": "Tiny dependency-free form binding helper: submit handling, validation schema and error display.",
 	"type": "module",

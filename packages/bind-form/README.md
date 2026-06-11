@@ -12,13 +12,13 @@
 ## Установка
 
 ```sh
-npm install bind-form
+npm install @chepchik/bind-form
 ```
 
 ## Использование
 
 ```ts
-import { bindForm } from "bind-form";
+import { bindForm } from "@chepchik/bind-form";
 
 const form = document.querySelector("form")!;
 const errorElement = document.querySelector("#error")!;
