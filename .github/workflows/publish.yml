@@ -1,0 +1,40 @@
+name: Publish package to npm
+
+on:
+  push:
+    tags:
+      - "spa-router-v*"
+      - "bind-form-v*"
+      - "dom-template-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve package from tag
+        id: package
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          name="${tag%-v*}"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build --workspace=packages/${{ steps.package.outputs.name }}
+
+      - name: Publish
+        run: npm publish --access public --workspace=packages/${{ steps.package.outputs.name }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

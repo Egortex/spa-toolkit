@@ -5,6 +5,7 @@
 	"type": "module",
 	"workspaces": ["packages/*"],
 	"scripts": {
-		"build": "npm run build --workspaces"
+		"build": "npm run build --workspaces",
+		"release": "node scripts/release.mjs"
 	}
 }
