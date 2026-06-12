@@ -1,6 +1,6 @@
 {
 	"name": "@chepchik/dom-template",
-	"version": "0.1.0",
+	"version": "0.1.2",
 	"description": "Tiny helper to mount an HTML string into the DOM and collect [ref] elements into a typed object.",
 	"type": "module",
 	"main": "./dist/index.js",
