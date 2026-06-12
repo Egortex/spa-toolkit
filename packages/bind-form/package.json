@@ -1,6 +1,6 @@
 {
 	"name": "@chepchik/bind-form",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Tiny dependency-free form binding helper: submit handling, validation schema and error display.",
 	"type": "module",
 	"main": "./dist/index.js",
