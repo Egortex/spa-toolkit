@@ -1,6 +1,6 @@
 {
 	"name": "@chepchik/bind-form",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"description": "Dependency-free typed form engine: createForm() with types inferred from schema, sync/async/server validation pipeline, automatic server error mapping and built-in accessibility (aria-invalid, focus management). Also exports the original bindForm() helper.",
 	"type": "module",
 	"main": "./dist/index.js",
