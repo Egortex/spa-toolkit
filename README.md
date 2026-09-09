@@ -12,25 +12,22 @@ TypeScript: роутер, биндинг форм и помощник для р�
 | [`@chepchik/bind-form`](packages/bind-form)       | Биндинг формы: обработка submit, валидация по схеме, показ ошибок                                             | [packages/bind-form/README.md](packages/bind-form/README.md)       |
 | [`@chepchik/dom-template`](packages/dom-template) | Вставка HTML-шаблона в DOM со сбором `[ref]`-элементов в типизированный объект                                | [packages/dom-template/README.md](packages/dom-template/README.md) |
 
-## Пример
+## Примеры
 
-В папке [`example`](example) (git submodule) — приложение
-[OOP_taskList](https://github.com/Egortex/OOP_taskList), использующее эти
-пакеты.
-
-```sh
-git submodule update --init --recursive
-
-git submodule update --remote --merge example
-```
+В [`examples/oop-tasklist`](examples/oop-tasklist) — приложение на всех трёх
+пакетах (типобезопасные маршруты и query cache из `spa-router`, `createForm`
+из `bind-form`, `component()` из `dom-template`). Живёт прямо в этом
+монорепозитории (workspace-пакет, не submodule) и всегда собирается против
+текущего кода `packages/*` — см. [examples/oop-tasklist/README.md](examples/oop-tasklist/README.md).
 
 ## Разработка
 
-Монорепозиторий на npm workspaces.
+Монорепозиторий на [pnpm workspaces](https://pnpm.io/workspaces).
 
 ```sh
-npm install
-npm run build   # собрать все пакеты (packages/*)
+pnpm install
+pnpm build   # собрать все пакеты (packages/*)
+pnpm test    # прогнать тесты всех пакетов
 ```
 
 Каждый пакет собирается через Vite в `dist/` и публикуется в npm
@@ -51,7 +48,7 @@ npm run build   # собрать все пакеты (packages/*)
 1. Убедиться, что рабочая директория чистая (всё закоммичено).
 2. Запустить:
    ```sh
-   npm run release -- <spa-router|bind-form|dom-template> <patch|minor|major>
+   pnpm release -- <spa-router|bind-form|dom-template> <patch|minor|major>
    ```
    Скрипт ([scripts/release.mjs](scripts/release.mjs)) поднимет версию в
    `packages/<пакет>/package.json`, закоммитит её и создаст тег
@@ -60,11 +57,12 @@ npm run build   # собрать все пакеты (packages/*)
    ```sh
    git push origin main <пакет>-v<версия>
    ```
-4. Workflow соберёт пакет (`npm run build`) и опубликует его в npm
-   (`npm publish`) с правами `public`.
+4. Workflow соберёт пакет (`pnpm build`) и опубликует его в npm
+   (`npm publish --provenance`) с правами `public`.
 
 ### Настройка (один раз)
 
-В Settings -> Secrets and variables -> Actions репозитория добавить секрет
-**`NPM_TOKEN`** — токен npm с правами Automation/Publish для аккаунта,
-владеющего пакетами `spa-router`, `bind-form`, `dom-template`.
+Публикация идёт через npm **Trusted Publishing** (OIDC) — без долгоживущего
+токена в секретах репозитория. Для каждого из трёх пакетов на npmjs.com:
+Settings → Trusted Publisher → GitHub Actions → указать этот репозиторий
+(`Egortex/spa-toolkit`) и workflow-файл (`publish.yml`).

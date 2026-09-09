@@ -2,8 +2,8 @@
 // Бампает версию пакета, коммитит package.json и создаёт git-тег
 // "<пакет>-v<версия>", который запускает publish.yml.
 //
-// Использование: npm run release -- <пакет> <patch|minor|major|версия>
-// Пример:        npm run release -- spa-router patch
+// Использование: pnpm release -- <пакет> <patch|minor|major|версия>
+// Пример:        pnpm release -- spa-router patch
 
 import { execFileSync } from "node:child_process";
 
@@ -11,7 +11,7 @@ const [pkgName, bump] = process.argv.slice(2);
 const allowedPackages = ["spa-router", "bind-form", "dom-template"];
 
 if (!pkgName || !bump || !allowedPackages.includes(pkgName)) {
-	console.error(`Использование: npm run release -- <${allowedPackages.join("|")}> <patch|minor|major|версия>`);
+	console.error(`Использование: pnpm release -- <${allowedPackages.join("|")}> <patch|minor|major|версия>`);
 	process.exit(1);
 }
 

@@ -50,15 +50,15 @@ jobs:
           filters: |
             spa-router:
               - 'packages/spa-router/**'
-              - 'package-lock.json'
+              - 'pnpm-lock.yaml'
               - 'scripts/generate-coverage-badge.mjs'
             bind-form:
               - 'packages/bind-form/**'
-              - 'package-lock.json'
+              - 'pnpm-lock.yaml'
               - 'scripts/generate-coverage-badge.mjs'
             dom-template:
               - 'packages/dom-template/**'
-              - 'package-lock.json'
+              - 'pnpm-lock.yaml'
               - 'scripts/generate-coverage-badge.mjs'
 
   test-spa-router:
@@ -71,13 +71,14 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build --workspace=packages/spa-router
-      - run: npm run test:coverage --workspace=packages/spa-router
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @chepchik/spa-router run build
+      - run: pnpm --filter @chepchik/spa-router run test:coverage
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -96,13 +97,14 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build --workspace=packages/bind-form
-      - run: npm run test:coverage --workspace=packages/bind-form
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @chepchik/bind-form run build
+      - run: pnpm --filter @chepchik/bind-form run test:coverage
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -121,13 +123,14 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build --workspace=packages/dom-template
-      - run: npm run test:coverage --workspace=packages/dom-template
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @chepchik/dom-template run build
+      - run: pnpm --filter @chepchik/dom-template run test:coverage
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -148,9 +151,12 @@ jobs:
           # нужно для git push при ручном запуске (workflow_dispatch)
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
           registry-url: https://registry.npmjs.org
 
       - name: Resolve package
@@ -165,10 +171,11 @@ jobs:
           echo "name=${name}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # Trusted Publishing (npm OIDC) требует npm >= 11.5.1 — версия, идущая
-      # в комплекте с actions/setup-node, может быть старее.
+      # в комплекте с actions/setup-node, может быть старее. npm сам публикует
+      # (pnpm publish пока не поддерживает Trusted Publishing так же надёжно).
       - name: Update npm
         run: npm install -g npm@latest
 
@@ -176,7 +183,7 @@ jobs:
       # с версией, ни тег не должны появиться в истории — падение workflow не
       # должно оставлять за собой "битый" релизный тег.
       - name: Test
-        run: npm run test:coverage --workspace=packages/${{ steps.package.outputs.name }}
+        run: pnpm --filter @chepchik/${{ steps.package.outputs.name }} run test:coverage
 
       - name: Bump version, commit and tag
         if: github.event_name == 'workflow_dispatch'
@@ -184,7 +191,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          npm version ${{ inputs.bump }} --no-git-tag-version -w packages/${{ steps.package.outputs.name }}
+          (cd "packages/${{ steps.package.outputs.name }}" && npm version ${{ inputs.bump }} --no-git-tag-version)
           version=$(node -p "require('./packages/${{ steps.package.outputs.name }}/package.json').version")
           tag="${{ steps.package.outputs.name }}-v${version}"
 
@@ -204,10 +211,11 @@ jobs:
           git push origin HEAD:main
 
       - name: Build
-        run: npm run build --workspace=packages/${{ steps.package.outputs.name }}
+        run: pnpm --filter @chepchik/${{ steps.package.outputs.name }} run build
 
       # Аутентификация через Trusted Publisher (OIDC) — NPM_TOKEN больше не нужен.
       # Требует, чтобы для пакета на npmjs.com был настроен Trusted Publisher
       # (Settings → Trusted Publisher → GitHub Actions → этот repo/workflow).
       - name: Publish
-        run: npm publish --access public --provenance --workspace=packages/${{ steps.package.outputs.name }}
+        working-directory: packages/${{ steps.package.outputs.name }}
+        run: npm publish --access public --provenance

@@ -168,8 +168,8 @@ const handle = createForm(form, {
 ## Testing
 
 ```sh
-npm run test            # tsc --noEmit && vitest run
-npm run test:coverage   # то же самое + отчёт покрытия, порог 100% по lines/branches/functions/statements
+pnpm test            # tsc --noEmit && vitest run
+pnpm test:coverage   # то же самое + отчёт покрытия, порог 100% по lines/branches/functions/statements
 ```
 
 Любой вклад в пакет должен сохранять 100% покрытие (`vitest.config.ts`,

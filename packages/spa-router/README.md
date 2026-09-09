@@ -440,8 +440,8 @@ Commit оборачивается в View Transitions API, если оно по�
 Тесты находятся в каталоге `tests`.
 
 ```sh
-npm test --workspace=@chepchik/spa-router
-npm run test:coverage --workspace=@chepchik/spa-router
+pnpm --filter @chepchik/spa-router test
+pnpm --filter @chepchik/spa-router test:coverage
 ```
 
 Набор тестов проверяет runtime-поведение и TypeScript-контракты. Для исходного
