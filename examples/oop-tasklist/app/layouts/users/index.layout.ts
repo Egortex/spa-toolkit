@@ -7,33 +7,33 @@ import { query } from "@chepchik/spa-router";
 import type { LayoutModule, LayoutRenderResult } from "@chepchik/spa-router";
 
 interface UsersLayoutRefs extends Record<string, HTMLElement> {
-	list: HTMLUListElement;
-	outlet: HTMLElement;
+  list: HTMLUListElement;
+  outlet: HTMLElement;
 }
 
 /** Подсвечивает в списке ссылку на пользователя, открытого в данный момент в outlet'е. */
 function highlightActive(list: HTMLElement, activeId: string): void {
-	list.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
-		link.classList.toggle("users-layout__link--active", link.dataset.userId === activeId);
-	});
+  list.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+    link.classList.toggle("users-layout__link--active", link.dataset.userId === activeId);
+  });
 }
 
 /** Перерисовывает список пользователей в сайдбаре. */
 function renderUserList(list: HTMLUListElement, users: User[], activeId: string): void {
-	list.innerHTML = "";
-	users.forEach((user) => {
-		const item = document.createElement("li");
-		item.className = "users-layout__item";
+  list.innerHTML = "";
+  users.forEach((user) => {
+    const item = document.createElement("li");
+    item.className = "users-layout__item";
 
-		const link = document.createElement("a");
-		link.href = `/users/${user.id}`;
-		link.textContent = user.name;
-		link.dataset.userId = String(user.id);
-		item.appendChild(link);
+    const link = document.createElement("a");
+    link.href = `/users/${user.id}`;
+    link.textContent = user.name;
+    link.dataset.userId = String(user.id);
+    item.appendChild(link);
 
-		list.appendChild(item);
-	});
-	highlightActive(list, activeId);
+    list.appendChild(item);
+  });
+  highlightActive(list, activeId);
 }
 
 /**
@@ -48,45 +48,51 @@ function renderUserList(list: HTMLUListElement, users: User[], activeId: string)
  * список отдаётся из кэша немедленно и обновляется в фоне (stale-while-revalidate).
  */
 const usersLayout: LayoutModule = {
-	render(container, ctx): LayoutRenderResult {
-		let outlet!: HTMLElement;
+  render(container, ctx): LayoutRenderResult {
+    let outlet!: HTMLElement;
 
-		const instance = component<UsersLayoutRefs, { activeId: string }>({
-			template: templateHTML,
-			setup({ refs, props, signal }) {
-				outlet = refs.outlet;
+    const instance = component<UsersLayoutRefs, { activeId: string }>({
+      template: templateHTML,
+      setup({ refs, props, signal }) {
+        outlet = refs.outlet;
 
-				// createState — точечная подписка "значение → узел", не связана с
-				// шаблоном автоматически; auto-unsubscribe через `signal` при destroy().
-				const users = createState<User[] | null>(null);
-				users.subscribe((list) => {
-					if (list === null) refs.list.innerHTML = '<li class="users-layout__item--loading">Загрузка...</li>';
-					else renderUserList(refs.list, list, props.activeId);
-				}, { signal });
+        // createState — точечная подписка "значение → узел", не связана с
+        // шаблоном автоматически; auto-unsubscribe через `signal` при destroy().
+        // subscribe() НЕ вызывает слушателя сразу текущим значением (в отличие,
+        // например, от RxJS BehaviorSubject) — только на будущие set(). Поэтому
+        // рендерим начальное состояние (null → "Загрузка...") вручную один раз,
+        // до подписки, иначе до первого set() список остаётся пустым.
+        const users = createState<User[] | null>(null);
+        const renderUsersState = (list: User[] | null): void => {
+          if (list === null) refs.list.innerHTML = '<li class="users-layout__item--loading">Загрузка...</li>';
+          else renderUserList(refs.list, list, props.activeId);
+        };
+        renderUsersState(users.get());
+        users.subscribe(renderUsersState, { signal });
 
-				void query<User[]>({ key: ["users"], loader: () => api.getUsers(), staleTime: 30_000 }).then((result) => {
-					if (signal.aborted) return;
-					users.set(result.data);
-					void result.revalidation?.then((fresh) => {
-						if (!signal.aborted) users.set(fresh);
-					});
-				});
-			},
-			onUpdate(props, { refs }) {
-				highlightActive(refs.list, props.activeId);
-			},
-		})(container, { activeId: ctx.params.id ?? "" });
+        void query<User[]>({ key: ["users"], loader: () => api.getUsers(), staleTime: 30_000 }).then((result) => {
+          if (signal.aborted) return;
+          users.set(result.data);
+          void result.revalidation?.then((fresh) => {
+            if (!signal.aborted) users.set(fresh);
+          });
+        });
+      },
+      onUpdate(props, { refs }) {
+        highlightActive(refs.list, props.activeId);
+      },
+    })(container, { activeId: ctx.params.id ?? "" });
 
-		return {
-			outlet,
-			update(nextCtx): void {
-				instance.update({ activeId: nextCtx.params.id ?? "" });
-			},
-			cleanup(): void {
-				instance.destroy();
-			},
-		};
-	},
+    return {
+      outlet,
+      update(nextCtx): void {
+        instance.update({ activeId: nextCtx.params.id ?? "" });
+      },
+      cleanup(): void {
+        instance.destroy();
+      },
+    };
+  },
 };
 
 export default usersLayout;

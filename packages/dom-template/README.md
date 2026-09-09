@@ -279,9 +279,11 @@ setup() {
 setup({ refs, state, signal }) {
 	const count = state(0);
 
-	count.subscribe((value) => {
+	const renderCount = (value: number): void => {
 		refs.counter.textContent = String(value);
-	}, { signal }); // автоотписка при destroy()
+	};
+	renderCount(count.get()); // см. предупреждение ниже — subscribe() это не сделает сама
+	count.subscribe(renderCount, { signal }); // автоотписка при destroy()
 
 	refs.increment.addEventListener("click", () => {
 		count.set((prev) => prev + 1);
@@ -294,6 +296,14 @@ setup({ refs, state, signal }) {
 созданные внутри `setup()` с `ctx.signal`, отписываются сами при `component.destroy()`.
 Если `state` используется вне `setup()` (например, в module-level сторе), отписку нужно
 делать вручную — вызвав функцию, которую возвращает `subscribe()`.
+
+⚠️ **`subscribe()` не вызывает слушателя немедленно текущим значением** — в отличие,
+например, от RxJS `BehaviorSubject`. Он реагирует только на *будущие* `set()`. Если DOM
+должен отражать начальное значение (а не только его последующие изменения), вызовите
+функцию-рендер самостоятельно один раз (`renderCount(count.get())` выше) — до или после
+`subscribe()`, не важно, порядок не имеет значения, если это один и тот же синхронный
+момент внутри `setup()`. Без этого узел останется с тем, что было в исходном шаблоне,
+до самого первого `set()`.
 
 ### Композиция: `mountChild`
 
