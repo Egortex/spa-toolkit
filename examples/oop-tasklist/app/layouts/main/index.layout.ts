@@ -1,6 +1,6 @@
 import "./index.scss";
 import templateHTML from "./index.html?raw";
-import { mountTemplate } from "@chepchik/dom-template";
+import { component } from "@chepchik/dom-template";
 import type { LayoutModule, LayoutRenderResult } from "@chepchik/spa-router";
 
 interface MainLayoutRefs extends Record<string, HTMLElement> {
@@ -18,13 +18,29 @@ function updateActiveLink(nav: HTMLElement, path: string): void {
 /** Основной layout приложения: шапка с навигацией + outlet для текущей страницы. */
 const mainLayout: LayoutModule = {
 	render(container, ctx): LayoutRenderResult {
-		const { refs } = mountTemplate<MainLayoutRefs>(container, templateHTML);
-		updateActiveLink(refs.nav, ctx.path);
+		// `component()` не отдаёт `refs` наружу (видны только внутри setup()/onUpdate),
+		// а LayoutModule обязан вернуть `outlet` вызывающему роутеру — захватываем его
+		// через замыкание: setup() выполняется синхронно, до того как фабрика вернёт instance.
+		let outlet!: HTMLElement;
+
+		const instance = component<MainLayoutRefs, { path: string }>({
+			template: templateHTML,
+			setup({ refs, props }) {
+				outlet = refs.outlet;
+				updateActiveLink(refs.nav, props.path);
+			},
+			onUpdate(props, { refs }) {
+				updateActiveLink(refs.nav, props.path);
+			},
+		})(container, { path: ctx.path });
 
 		return {
-			outlet: refs.outlet,
-			update(ctx): void {
-				updateActiveLink(refs.nav, ctx.path);
+			outlet,
+			update(nextCtx): void {
+				instance.update({ path: nextCtx.path });
+			},
+			cleanup(): void {
+				instance.destroy();
 			},
 		};
 	},

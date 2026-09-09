@@ -1,6 +1,6 @@
 import "./index.scss";
 import templateHTML from "./index.html?raw";
-import { mountTemplate } from "@chepchik/dom-template";
+import { component } from "@chepchik/dom-template";
 import { router } from "../../../main";
 import { clearAuthToken, getAuthToken } from "../../session/session";
 import type { PageModule } from "@chepchik/spa-router";
@@ -16,6 +16,24 @@ interface ProfileRefs extends Record<string, HTMLElement> {
 	greeting: HTMLParagraphElement;
 	logoutBtn: HTMLButtonElement;
 }
+
+const ProfileView = component<ProfileRefs, ProfileData>({
+	template: templateHTML,
+	setup({ refs, props, signal }) {
+		refs.greeting.textContent = `Добро пожаловать, ${props.user.name}!`;
+
+		// { signal } — слушатель снимется сам при уходе со страницы (component.destroy()),
+		// без ручного removeEventListener.
+		refs.logoutBtn.addEventListener(
+			"click",
+			() => {
+				clearAuthToken();
+				router.navigate("/login");
+			},
+			{ signal },
+		);
+	},
+});
 
 const profilePage: PageModule<ProfileData> = {
 	guard(): boolean {
@@ -35,14 +53,9 @@ const profilePage: PageModule<ProfileData> = {
 		return (await response.json()) as ProfileData;
 	},
 
-	render(container, data): void {
-		const { refs } = mountTemplate<ProfileRefs>(container, templateHTML);
-		refs.greeting.textContent = `Добро пожаловать, ${data.user.name}!`;
-
-		refs.logoutBtn.addEventListener("click", () => {
-			clearAuthToken();
-			router.navigate("/login");
-		});
+	render(container, data) {
+		const instance = ProfileView(container, data);
+		return () => instance.destroy();
 	},
 };
 

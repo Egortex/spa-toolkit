@@ -24,6 +24,12 @@
 доступность и фокус-менеджмент. Отправка по Enter работает "из коробки",
 т.к. используется стандартное поведение `<form>`.
 
+> Живой пример: [`examples/oop-tasklist`](../../examples/oop-tasklist) —
+> `app/pages/form-demo/index.page.ts` показывает полный пайплайн (типизированный
+> `age: number`, async-проверка занятости имени на поле, серверная ошибка через
+> `FormSubmitError`/`errorMessages`), `app/pages/login/index.page.ts` и
+> `app/components/task/TaskManager.ts` — более простые формы на `createForm`.
+
 ## Установка
 
 ```sh

@@ -25,6 +25,12 @@
 - восстановление позиции скролла при `popstate`;
 - View Transitions с fallback и учётом `prefers-reduced-motion`.
 
+> Живой пример: [`examples/oop-tasklist`](../../examples/oop-tasklist) использует
+> `defineRoutes`/типобезопасный `navigate`/`route().href()`, `onPhaseChange`,
+> декларативный `loader()` + `query()` (route-level data cache) и `errorBoundary`
+> в реальном приложении — см. `app/pages/routes.ts`, `main.ts`,
+> `app/layouts/users/index.layout.ts`, `app/pages/users/[id]/index.page.ts`.
+
 ## Установка
 
 ```sh

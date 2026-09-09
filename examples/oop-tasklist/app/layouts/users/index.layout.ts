@@ -1,32 +1,26 @@
 import "./index.scss";
 import templateHTML from "./index.html?raw";
-import { mountTemplate } from "@chepchik/dom-template";
+import { component, createState } from "@chepchik/dom-template";
 import type { User } from "../../services/ApiService";
 import { jsonPlaceholderApi as api } from "../../services/container";
-import type { LayoutModule, LayoutRenderResult, RouteContext } from "@chepchik/spa-router";
+import { query } from "@chepchik/spa-router";
+import type { LayoutModule, LayoutRenderResult } from "@chepchik/spa-router";
 
 interface UsersLayoutRefs extends Record<string, HTMLElement> {
 	list: HTMLUListElement;
 	outlet: HTMLElement;
 }
 
-/** Список пользователей переиспользуется между навигациями внутри секции /users. */
-let cachedUsers: User[] | null = null;
-
 /** Подсвечивает в списке ссылку на пользователя, открытого в данный момент в outlet'е. */
-function highlightActive(refs: UsersLayoutRefs, ctx: RouteContext): void {
-	const activeId = ctx.params.id;
-	refs.list.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
+function highlightActive(list: HTMLElement, activeId: string): void {
+	list.querySelectorAll<HTMLAnchorElement>("a").forEach((link) => {
 		link.classList.toggle("users-layout__link--active", link.dataset.userId === activeId);
 	});
 }
 
-/** Загружает (или берёт из кэша) список пользователей и заполняет сайдбар. */
-async function renderList(refs: UsersLayoutRefs, ctx: RouteContext, signal: AbortSignal): Promise<void> {
-	const users = cachedUsers ?? (cachedUsers = await api.getUsers(signal));
-	if (signal.aborted) return;
-
-	refs.list.innerHTML = "";
+/** Перерисовывает список пользователей в сайдбаре. */
+function renderUserList(list: HTMLUListElement, users: User[], activeId: string): void {
+	list.innerHTML = "";
 	users.forEach((user) => {
 		const item = document.createElement("li");
 		item.className = "users-layout__item";
@@ -37,34 +31,59 @@ async function renderList(refs: UsersLayoutRefs, ctx: RouteContext, signal: Abor
 		link.dataset.userId = String(user.id);
 		item.appendChild(link);
 
-		refs.list.appendChild(item);
+		list.appendChild(item);
 	});
-
-	highlightActive(refs, ctx);
+	highlightActive(list, activeId);
 }
 
 /**
  * Layout секции /users: master-detail — слева список пользователей (общий для
  * /users и /users/:id), справа outlet с деталями. Монтируется вторым в цепочке
  * после `mainLayout`.
+ *
+ * Список пользователей берётся через `query()` — route-level data cache
+ * spa-router (fresh/stale/expired, `staleTime: 30_000`) вместо ручного
+ * модульного `cachedUsers`/`AbortController`, которые были здесь раньше:
+ * повторный заход в /users в течение 30с не бьёт по сети вообще, а после —
+ * список отдаётся из кэша немедленно и обновляется в фоне (stale-while-revalidate).
  */
 const usersLayout: LayoutModule = {
 	render(container, ctx): LayoutRenderResult {
-		const { refs } = mountTemplate<UsersLayoutRefs>(container, templateHTML);
-		const controller = new AbortController();
+		let outlet!: HTMLElement;
 
-		if (!cachedUsers) {
-			refs.list.innerHTML = '<li class="users-layout__item--loading">Загрузка...</li>';
-		}
-		void renderList(refs, ctx, controller.signal);
+		const instance = component<UsersLayoutRefs, { activeId: string }>({
+			template: templateHTML,
+			setup({ refs, props, signal }) {
+				outlet = refs.outlet;
+
+				// createState — точечная подписка "значение → узел", не связана с
+				// шаблоном автоматически; auto-unsubscribe через `signal` при destroy().
+				const users = createState<User[] | null>(null);
+				users.subscribe((list) => {
+					if (list === null) refs.list.innerHTML = '<li class="users-layout__item--loading">Загрузка...</li>';
+					else renderUserList(refs.list, list, props.activeId);
+				}, { signal });
+
+				void query<User[]>({ key: ["users"], loader: () => api.getUsers(), staleTime: 30_000 }).then((result) => {
+					if (signal.aborted) return;
+					users.set(result.data);
+					void result.revalidation?.then((fresh) => {
+						if (!signal.aborted) users.set(fresh);
+					});
+				});
+			},
+			onUpdate(props, { refs }) {
+				highlightActive(refs.list, props.activeId);
+			},
+		})(container, { activeId: ctx.params.id ?? "" });
 
 		return {
-			outlet: refs.outlet,
-			update(ctx): void {
-				highlightActive(refs, ctx);
+			outlet,
+			update(nextCtx): void {
+				instance.update({ activeId: nextCtx.params.id ?? "" });
 			},
 			cleanup(): void {
-				controller.abort();
+				instance.destroy();
 			},
 		};
 	},

@@ -3,8 +3,10 @@ import "./task.scss";
 import templateHTML from "./task.html?raw";
 import { Task, TaskPriority } from "./Task";
 import { ApiService } from "../../services/ApiService";
-import { bindForm } from "@chepchik/bind-form";
+import { createForm, type FieldSchema } from "@chepchik/bind-form";
 import { mountTemplate } from "@chepchik/dom-template";
+
+type TaskFormSchema = { title: FieldSchema<string>; priority: FieldSchema<string> } & Record<string, FieldSchema<any>>;
 
 interface TaskItemRefs extends Record<string, HTMLElement[]> {
 	item: HTMLLIElement[];
@@ -21,8 +23,6 @@ export interface TaskManagerRefs extends Record<string, HTMLElement> {
 	taskPriority: HTMLSelectElement;
 	tasksList: HTMLUListElement;
 }
-
-type TaskFormField = "title" | "priority";
 
 export interface TaskManagerData {
 	api: ApiService;
@@ -44,7 +44,7 @@ export class TaskManager extends Component<TaskManagerRefs> {
 
 	/** Подписывается на форму добавления задачи (submit/Enter) и рендерит начальный список. */
 	private init(): void {
-		bindForm<TaskFormField>(this.refs.form, {
+		createForm<TaskFormSchema>(this.refs.form, {
 			schema: {
 				title: {
 					required: "Введите название задачи",

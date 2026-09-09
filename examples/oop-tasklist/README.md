@@ -16,13 +16,50 @@ SPA-приложение со списком задач на Vanilla TypeScript 
 
 ## Что здесь показано из 0.2.0
 
+### spa-router
+
 - **Типобезопасные маршруты** — `defineRoutes` в [app/pages/routes.ts](app/pages/routes.ts),
-  `router.navigate('users.detail', { id })` / `router.route(name).href(params)` вместо строк.
+  `router.navigate('users.detail', { id })` / `router.route(name).href(params)` вместо строк
+  ([main.ts](main.ts)).
 - **Навигационные фазы** — `router.onPhaseChange` в [main.ts](main.ts) поверх уже
   использовавшегося `onStatusChange`.
-- **`createForm`** — типизированные `values`/`errors`, accessibility из коробки
-  (`aria-invalid`, `aria-describedby`, автофокус на невалидное поле) в форме задач.
-- **`component()`/`mountTemplate`** — компонентная модель `dom-template` в UI-компонентах.
+- **Route-level data cache** — `query()` вместо ручного модульного кэша в
+  [app/layouts/users/index.layout.ts](app/layouts/users/index.layout.ts) (список пользователей,
+  `staleTime: 30_000`, stale-while-revalidate) и декларативный `loader()` с ключом кэша в
+  [app/pages/users/[id]/index.page.ts](app/pages/users/[id]/index.page.ts).
+- **`errorBoundary`** — та же страница `/users/:id`: если `loader` упадёт (сеть/404), вместо
+  `console.error` рендерится `UserErrorView`.
+
+### bind-form
+
+- **`createForm`** — везде, где раньше был `bindForm`: [app/pages/login](app/pages/login/index.page.ts),
+  [app/pages/form-demo](app/pages/form-demo/index.page.ts),
+  [app/components/task/TaskManager.ts](app/components/task/TaskManager.ts).
+- **Типизированные значения** — `age: number` в форме регистрации (`type: "number"` в схеме),
+  не строка.
+- **Пайплайн `sync → async → server`** — на странице `/form-demo`: async-проверка занятости
+  имени пользователя (поле `username`, стадия `async`) отдельно от серверной ошибки email
+  через `FormSubmitError`/`errorMessages` (стадия `server`, срабатывает на submit) — обе видно
+  в одной форме, но на разных стадиях пайплайна.
+- **Accessibility из коробки** — `aria-invalid`/`aria-describedby`/автофокус на невалидное поле
+  работают на всех формах без дополнительной настройки (это поведение `createForm` по умолчанию).
+
+### dom-template
+
+- **`component()`** — почти все страницы и оба layout'а
+  (`app/pages/*/index.page.ts`, `app/layouts/*/index.layout.ts`).
+- **`createState`** — [app/layouts/users/index.layout.ts](app/layouts/users/index.layout.ts):
+  список пользователей как `State<User[] | null>`, точечная подписка перерисовывает сайдбар.
+- **Композиция `component()` + существующий OOP-слой** — [app/pages/tasks/index.page.ts](app/pages/tasks/index.page.ts)
+  монтирует страницу через `component()`, а внутри `setup()` создаёт `TaskManager`/`SearchPanel`
+  (класс `Component` из [app/components/component.ts](app/components/component.ts) — этот слой
+  **не** переведён на `component()`: у `TaskManager`/`SearchPanel` богатый публичный API
+  (`getTasks`/`searchTasks`/`triggerEvent`), которым пользуются друг друга, и создаются они
+  заново при каждом заходе на `/tasks`, а не как app-shell-синглтоны. Переписывать эту связку
+  под контракт `component()` (`{nodes, update, destroy}`) в рамках этого прохода не стали —
+  это осознанная граница, а не недосмотр. Прямой `mountTemplate` также остался в
+  `TaskManager.displayTasks()` (перерисовка списка `<li>` на каждое изменение — разовая
+  операция без lifecycle-выгоды от `component()`).
 
 ## Стек
 
@@ -88,7 +125,6 @@ app/
   layouts/       # общие layout'ы (шапка/навигация), переиспользуются между страницами
   pages/         # страницы (file-based маршрутизация), у каждой свой .html/.scss/.page.ts
   components/    # переиспользуемые UI-компоненты (Component, TaskManager, SearchPanel, ...)
-  forms/         # createForm/bindForm — валидация и обработка submit форм
   services/      # ApiService — обёртка над axios
   assets/style/  # глобальные стили (тема, Tailwind)
 server/
@@ -105,7 +141,7 @@ main.ts          # точка входа клиента
 
 ## Дальнейшие задачи (TODO)
 
-- ~~Сделать по нажатию на Enter добавление задачи~~ — готово (форма задач через `bindForm`)
+- ~~Сделать по нажатию на Enter добавление задачи~~ — готово (форма задач через `createForm`)
 - ~~Preload критичных маршрутов, skeleton-состояния, stale-while-revalidate~~ — готово (см. [ARCHITECTURE.md](./ARCHITECTURE.md#22-роутер--approuter))
 - ~~Параллельная загрузка layout/page-модулей и отмена устаревших запросов через AbortSignal~~ — готово (см. [ARCHITECTURE.md](./ARCHITECTURE.md#22-роутер--approuter))
 - ~~Вложенные маршруты / master-detail для `/users` → `/users/:id`~~ — готово (см. [ARCHITECTURE.md](./ARCHITECTURE.md#23-layouts--applayouts))

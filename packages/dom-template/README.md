@@ -15,6 +15,35 @@ side-эффектов через `AbortSignal` — но при этом оста
 настоящим DOM: **никакого Virtual DOM и diff'а здесь нет** — `setup()` мутирует
 реальные узлы напрямую.
 
+> Живой пример: [`examples/oop-tasklist`](../../examples/oop-tasklist) — почти
+> все страницы и оба layout'а (`app/pages/*/index.page.ts`,
+> `app/layouts/*/index.layout.ts`) написаны на `component()`, а
+> `app/layouts/users/index.layout.ts` дополнительно показывает `createState`
+> (точечная подписка списка пользователей на перерисовку). `mountTemplate`
+> напрямую остался в `app/components/component.ts` — внутри уже существовавшей
+> OOP-обвязки (`Component`/`TaskManager`), которую не стали переводить на
+> `component()` в этом проходе (другая модель владения жизненным циклом,
+> см. README примера).
+
+## Что выбрать: `mountTemplate` vs `component()` vs `createState`
+
+| | `mountTemplate` | `component()` | `createState` |
+|---|---|---|---|
+| Что делает | Вставляет HTML-строку в контейнер, собирает `[ref]` в объект | Фабрика с жизненным циклом поверх `mountTemplate` | Значение + подписчики (`get`/`set`/`subscribe`), без DOM вообще |
+| Единица работы | Разовая операция (вызвал — забыл) | Долгоживущий *экземпляр* (create → mount → update* → destroy) | Долгоживущее *значение*, не привязанное к какому-то одному компоненту |
+| `refs` | Возвращает наружу (`result.refs`) | Видны только внутри `setup()`/`onUpdate` — наружу не отдаются | — |
+| `props` / обновление данных | Нет — вставил заново вручную | `instance.update(nextProps)` без remount'а | `state.set(next)` |
+| Отмена side-эффектов | Вручную (`removeEventListener`, отмена fetch и т.п. — сами) | `signal` в `setup()`, абортится в `destroy()` | Через `{ signal }` в `subscribe()`, если он передан |
+| Уничтожение | Вручную: `nodes.forEach(n => n.remove())` | `instance.destroy()` — каскад (дети → abort → cleanup → remove) | Нет "уничтожения" — просто перестают подписываться/держать ссылку |
+| Композиция (вложенные компоненты) | Нет встроенной поддержки | `mountChild()` с каскадным `destroy()` | — (можно шарить один `state` между несколькими `setup()`) |
+| Когда использовать | Разовая вставка разметки без своей "жизни": статичный блок, одноразовая замена содержимого, список `<li>`, который целиком перерисовывается при каждом изменении (см. `TaskManager.displayTasks()` в примере) | Всё, что имеет жизненный цикл, совпадающий с чем-то внешним: страница/layout роутера (mount при заходе, destroy при уходе), виджет с `fetch`/подписками, которые обязаны отмениться при размонтировании | Значение, за которым нужно наблюдать: счётчик, список из API, флаг загрузки — особенно если несколько разных DOM-узлов (или несколько компонентов) должны реагировать на одно и то же изменение |
+
+Правило по умолчанию: если внутри вашего кода после вставки шаблона появляется
+`addEventListener`, `fetch` или что-то ещё, что нужно будет отменить/убрать
+позже — берите `component()`, а не голый `mountTemplate` с ручным cleanup'ом.
+Если разметка статична и никогда не обновляется без полного пересоздания —
+`mountTemplate` достаточно, `component()` не даст никакой выгоды.
+
 ## Установка
 
 ```sh
@@ -178,6 +207,29 @@ card.destroy();
 
   `destroy()` идемпотентен — повторный вызов на уже уничтоженном экземпляре ничего не делает.
   `update()` на уже уничтоженном экземпляре бросает ошибку.
+
+#### Методы и хуки жизненного цикла
+
+| Стадия | Вызывает | Сигнатура | Когда срабатывает |
+|---|---|---|---|
+| **Create** | вы | `component(definition): ComponentFactory<TProps>` | Один раз при объявлении — ничего ещё не смонтировано, это просто фабрика |
+| **Mount** | вы | `factory(container, initialProps): ComponentInstance<TProps>` | Вставляет шаблон, создаёт `AbortController`, вызывает `setup()` |
+| ↳ хук | dom-template | `definition.setup(ctx: SetupContext<TRefs, TProps>): void \| (() => void)` | Один раз, синхронно, внутри вызова фабрики. Может вернуть cleanup-функцию |
+| **Update** | вы | `instance.update(nextProps: Partial<TProps>): void` | Сколько угодно раз, пока экземпляр не уничтожен |
+| ↳ хук | dom-template | `definition.onUpdate?(props: TProps, ctx: SetupContext<TRefs, TProps>): void` | Вызывается из `instance.update()`, если определён в `definition` |
+| **Destroy** | вы | `instance.destroy(): void` | Один раз; идемпотентен (повторный вызов — no-op) |
+| ↳ шаг 1 | dom-template | — | Уничтожает всех детей, смонтированных через `mountChild` (порядок: дети → родитель) |
+| ↳ шаг 2 | dom-template | — | `abortController.abort()` — `signal`, переданный в `setup()`, становится `aborted` |
+| ↳ шаг 3 | dom-template | вызывает cleanup, возвращённый `setup()` | Функция, которую вернул `setup()` (если вернул) |
+| ↳ шаг 4 | dom-template | — | Удаляет `instance.nodes` из DOM |
+
+Композиция и состояние — доступны только *внутри* `setup()`/`onUpdate` через `ctx`, отдельных вызовов "снаружи" нет:
+
+| Что | Сигнатура (внутри `ctx`) | Зачем |
+|---|---|---|
+| `ctx.mountChild` | `mountChild(childFactory, container, props): ComponentInstance` | Монтирует дочерний компонент, регистрирует для каскадного `destroy()` |
+| `ctx.state` | `state<T>(initial: T): State<T>` | То же самое, что импортированный `createState` — доступен прямо в `setup()` без импорта |
+| `ctx.signal` | `AbortSignal` | Передавайте в `fetch`/`addEventListener`/`subscribe` для автоотмены при `destroy()` |
 
 ### Автоочистка side-эффектов через `AbortSignal`
 

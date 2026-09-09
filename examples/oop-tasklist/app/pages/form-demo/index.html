@@ -1,10 +1,12 @@
 <section class="page page--form-demo form-demo-card">
 	<h1 class="text-3xl font-bold tracking-tight">Регистрация (демо bind-form)</h1>
 	<p class="form-demo-card__intro">
-		Форма демонстрирует все возможности <code>@chepchik/bind-form</code>: правила схемы,
-		валидацию по blur, асинхронный <code>resolver</code>, отслеживание состояния
-		(<code>onStateChange</code> / <code>getState</code>), <code>watch</code> и блокировку
-		кнопки на время отправки.
+		Форма демонстрирует <code>createForm</code> из <code>@chepchik/bind-form</code>:
+		типизированные <code>values</code>/<code>errors</code> из схемы (возраст — <code>number</code>,
+		не строка), пайплайн валидации <code>sync → async → server</code> (проверка занятости имени —
+		асинхронное правило поля, а не глобальный <code>resolver</code>), автомаппинг серверных ошибок
+		(<code>FormSubmitError</code>) и accessibility из коробки (<code>aria-invalid</code>,
+		<code>aria-describedby</code>, автофокус на невалидное поле).
 	</p>
 
 	<form ref="form" class="form-demo">
