@@ -522,6 +522,178 @@ describe("Router", () => {
     router.start();
     await failed;
   });
+
+  it("shows the page's skeleton while a loader without cached data is pending, then replaces it", async () => {
+    let release!: (value: string) => void;
+    const slowLoader = vi.fn(() => new Promise<string>((resolve) => { release = resolve; }));
+    const skeleton = vi.fn((container: HTMLElement) => { container.textContent = "loading skeleton"; });
+    const page: PageModule = {
+      loader: slowLoader,
+      skeleton,
+      render(container, data) { container.textContent = String(data); },
+    };
+    const container = document.createElement("main");
+    history.replaceState({}, "", "/slow");
+    const router = new Router([{ path: "/slow", load: moduleOf(page) }], container);
+    router.start();
+
+    await vi.waitFor(() => expect(skeleton).toHaveBeenCalledTimes(1));
+    expect(container.textContent).toBe("loading skeleton");
+    expect(document.body.classList.contains("has-skeleton")).toBe(true);
+
+    const done = waitForStatus(router, "success");
+    release("real data");
+    await done;
+
+    expect(container.textContent).toBe("real data");
+    expect(document.body.classList.contains("has-skeleton")).toBe(false);
+  });
+
+  it("skips the skeleton once a legacy loader's data is already cached", async () => {
+    const skeleton = vi.fn();
+    const page: PageModule = {
+      loader: async () => "value",
+      skeleton,
+      render(container, data) { container.textContent = String(data); },
+    };
+    const other: PageModule = { render(container) { container.textContent = "other"; } };
+    const container = document.createElement("main");
+    history.replaceState({}, "", "/cached");
+    const router = new Router([
+      { path: "/cached", load: moduleOf(page) },
+      { path: "/other", load: moduleOf(other) },
+    ], container);
+
+    const first = waitForStatus(router, "success");
+    router.start();
+    await first;
+    expect(skeleton).toHaveBeenCalledTimes(1); // no cache yet on the first visit
+
+    const toOther = waitForStatus(router, "success");
+    router.navigate("/other");
+    await toOther;
+
+    const back = waitForStatus(router, "success");
+    router.navigate("/cached");
+    await back;
+
+    expect(skeleton).toHaveBeenCalledTimes(1); // still 1: the second visit hit the cache, nothing to wait for
+  });
+
+  it("skips the skeleton once a declarative loader's query cache entry is fresh", async () => {
+    const skeleton = vi.fn();
+    const page: PageModule = {
+      loader: loader({ key: () => ["thing"], load: async () => "value" }),
+      skeleton,
+      render(container, data) { container.textContent = String(data); },
+    };
+    const other: PageModule = { render(container) { container.textContent = "other"; } };
+    const container = document.createElement("main");
+    history.replaceState({}, "", "/declarative");
+    const router = new Router([
+      { path: "/declarative", load: moduleOf(page) },
+      { path: "/other", load: moduleOf(other) },
+    ], container);
+
+    const first = waitForStatus(router, "success");
+    router.start();
+    await first;
+    expect(skeleton).toHaveBeenCalledTimes(1);
+
+    const toOther = waitForStatus(router, "success");
+    router.navigate("/other");
+    await toOther;
+
+    const back = waitForStatus(router, "success");
+    router.navigate("/declarative");
+    await back;
+
+    expect(skeleton).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes the previous page when mounting the skeleton for a route with a different layout", async () => {
+    const firstLayout = async () => ({
+      default: { render: () => ({ outlet: document.createElement("section") }) },
+    });
+    let release!: (value: string) => void;
+    const skeleton = vi.fn();
+    const container = document.createElement("main");
+    history.replaceState({}, "", "/one");
+    const router = new Router([
+      { path: "/one", layout: firstLayout, load: moduleOf({ render(container) { container.textContent = "one"; } }) },
+      {
+        path: "/two",
+        load: moduleOf({
+          loader: () => new Promise<string>((resolve) => { release = resolve; }),
+          skeleton,
+          render(container, data) { container.textContent = String(data); },
+        }),
+      },
+    ], container);
+
+    const first = waitForStatus(router, "success");
+    router.start();
+    await first;
+
+    router.navigate("/two");
+    await vi.waitFor(() => expect(skeleton).toHaveBeenCalledTimes(1));
+
+    const done = waitForStatus(router, "success");
+    release("two");
+    await done;
+    expect(container.textContent).toBe("two");
+  });
+
+  it("bails out of skeleton mounting if superseded while its layout is still loading", async () => {
+    let releaseLayout!: (value: { default: { render: () => { outlet: HTMLElement } } }) => void;
+    const delayedLayout = () => new Promise<{ default: { render: () => { outlet: HTMLElement } } }>((resolve) => {
+      releaseLayout = resolve;
+    });
+    const skeleton = vi.fn();
+    const page: PageModule = {
+      loader: () => new Promise<never>(() => { /* superseded before it matters */ }),
+      skeleton,
+      render() { /* never reached */ },
+    };
+    const fast: PageModule = { render(container) { container.textContent = "fast"; } };
+    const container = document.createElement("main");
+    history.replaceState({}, "", "/slow-layout");
+    const router = new Router([
+      { path: "/slow-layout", layout: delayedLayout, load: moduleOf(page) },
+      { path: "/fast", load: moduleOf(fast) },
+    ], container);
+
+    router.start();
+    await vi.waitFor(() => expect(releaseLayout).toBeTypeOf("function"));
+
+    const fastDone = waitForStatus(router, "success");
+    router.navigate("/fast");
+    releaseLayout({ default: { render: () => ({ outlet: document.createElement("div") }) } });
+    await fastDone;
+
+    expect(skeleton).not.toHaveBeenCalled();
+    expect(container.textContent).toBe("fast");
+  });
+
+  it("removes has-skeleton if the loader fails while the skeleton was showing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const skeleton = vi.fn();
+    const page: PageModule = {
+      loader: async () => { throw new Error("boom"); },
+      skeleton,
+      render() { /* never reached */ },
+    };
+    const container = document.createElement("main");
+    history.replaceState({}, "", "/fails");
+    const router = new Router([{ path: "/fails", load: moduleOf(page) }], container);
+
+    const failed = waitForStatus(router, "error");
+    router.start();
+    await failed;
+
+    expect(skeleton).toHaveBeenCalledTimes(1);
+    expect(document.body.classList.contains("has-skeleton")).toBe(false);
+  });
 });
 
 

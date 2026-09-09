@@ -13,20 +13,13 @@ interface UserRefs extends Record<string, HTMLElement> {
  */
 const UsersHintView = component<UserRefs, Record<string, never>>({ template: templateHTML, setup() { } });
 
-const UserSkeletonView = component<UserRefs, Record<string, never>>({
-  template: templateHTML, setup({ refs }) {
-    refs.list.textContent = "Загрузка...";
-    refs.list.classList.add("skeleton", "users-list__skeleton-text");
-  },
-});
-
+// Skeleton здесь намеренно не нужен: он показывается только пока есть активный
+// `loader`, которого ждать нужно (см. PageModule.skeleton в @chepchik/spa-router,
+// и usersLayout/users/[id] для реального примера с loader'ом) — а у этой страницы
+// нет loader'а вообще, рендер мгновенный, ждать нечего.
 const usersPage: PageModule = {
   render(container) {
     const instance = UsersHintView(container, {});
-    return () => instance.destroy();
-  },
-  skeleton(container) {
-    const instance = UserSkeletonView(container, {});
     return () => instance.destroy();
   },
 };

@@ -16,6 +16,7 @@
 - guard'ы с поддержкой синхронного и асинхронного результата;
 - обычные и декларативные loader'ы;
 - query cache со stable keys, дедупликацией запросов и stale-while-revalidate;
+- skeleton-разметка на время ожидания `loader`, если данных ещё нет ни в каком кэше;
 - композиция loader'ов через `parallel`, `sequential` и `defer`;
 - отмена устаревших навигаций через `AbortSignal`;
 - наблюдение за атомарными фазами навигации;
@@ -213,6 +214,35 @@ const result = await query({
 
 console.log(result.data, result.state, result.revalidation);
 ```
+
+## Skeleton: временная разметка на время загрузки
+
+Если у страницы есть `loader`, можно объявить `skeleton(container)` — он
+рендерится сразу после монтирования layout'а, **но только если данных ждать
+реально придётся**: `fresh`/`stale` попадание в кэш (см. выше) отдаётся
+мгновенно, и в этом случае `skeleton` не вызывается вообще — показывать
+нечего, ждать не нужно. На время показа `<body>` получает класс
+`has-skeleton` (снимается автоматически перед финальным рендером или при
+ошибке).
+
+```ts
+const page: PageModule<User> = {
+  loader: loader({ key: (ctx) => ["user", ctx.params.id], load: fetchUser }),
+
+  skeleton(container) {
+    container.innerHTML = `<p class="skeleton">Загрузка…</p>`;
+  },
+
+  render(container, user) {
+    container.textContent = user.name;
+  },
+};
+```
+
+`skeleton` — синхронная функция без доступа к `ctx`/данным: она не может
+знать, что загружается, только то, что что-то загружается. Если страница
+не определяет `skeleton`, во время ожидания `loader` контейнер просто не
+трогается (текущее содержимое, если оно было, остаётся видимым до коммита).
 
 ## Композиция loader'ов
 

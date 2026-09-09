@@ -268,6 +268,18 @@ export class Router<Routes extends RouteMap = RouteMap> {
     return { data };
   }
 
+  /**
+   * Whether `executeLoader` would resolve this loader without actually waiting
+   * (a fresh or stale cache hit) — used to decide whether a skeleton is worth
+   * showing at all (REQ: "only if there's no cached data yet").
+   */
+  private hasSyncData(pageLoader: PageLoader, path: string, navigation: Navigation): boolean {
+    if (isDeclarativeLoader(pageLoader)) {
+      return this.queryCache.get(pageLoader.key(toRouteContext(navigation))) !== undefined;
+    }
+    return this.cache.get(path) !== undefined;
+  }
+
   private async render(options: { isPopState?: boolean; fromHref?: string } = {}): Promise<void> {
     const id = ++this.currentNavigationId;
     this.abortController?.abort();
@@ -311,6 +323,26 @@ export class Router<Routes extends RouteMap = RouteMap> {
       let background: Promise<unknown> | undefined;
       if (page.loader) {
         this.setPhase("load", navigation);
+
+        // Show the page's skeleton right after the layout is mounted, but only
+        // when there's no data available without waiting (a fresh/stale cache hit
+        // resolves the loader immediately, so there's nothing to show a skeleton for).
+        if (page.skeleton && !this.hasSyncData(page.loader, resolved.path, navigation)) {
+          const skeletonContainer = await this.layoutChain.mount(
+            layoutLoaders,
+            common,
+            toRouteContext(navigation),
+            layoutModules,
+            this.container,
+            () => this.disposePage(navigation!),
+          );
+          if (!this.isActive(navigation)) return;
+          this.disposePage(navigation);
+          skeletonContainer.innerHTML = "";
+          document.body.classList.add("has-skeleton");
+          page.skeleton(skeletonContainer);
+        }
+
         const loaderController = createLinkedAbortController(navigation.signal);
         try {
           const result = await this.executeLoader(
@@ -351,6 +383,7 @@ export class Router<Routes extends RouteMap = RouteMap> {
         if (!this.isActive(navigation!)) return;
         this.disposePage(navigation!);
         pageContainer.innerHTML = "";
+        document.body.classList.remove("has-skeleton");
         const cleanup = page!.render(pageContainer, data, toRouteContext(navigation!));
         this.cleanupCurrentPage = typeof cleanup === "function" ? cleanup : null;
       });
