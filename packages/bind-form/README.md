@@ -1,17 +1,27 @@
 # bind-form
 
-Что: один помощник `bindForm`, который вешает обработчик `submit` на форму,
-валидирует поля по схеме (`required` / `pattern` / `minLength` / `maxLength` /
-`min` / `max` / `validate`, опционально + `resolver`) и вызывает `onSubmit`
-с собранными значениями, если всё валидно. Опционально умеет валидировать
-поля "на лету" (`validateOn: "blur" | "input"`), показывать ошибку для
-каждого поля отдельно, отслеживать `dirty`/`touched`/`isSubmitting`
-(`onStateChange`, `getState`), реагировать на изменения отдельного поля
-(`watch`) и блокировать кнопку отправки на время `onSubmit`.
+![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Egortex/spa-toolkit/main/packages/bind-form/coverage-badge.json) ![size](https://img.shields.io/bundlephobia/minzip/@chepchik/bind-form)
+
+Что: dependency-free typed form engine поверх настоящего `<form>`/`FormData`.
+Два входа в один и тот же движок:
+
+- `createForm({ schema, initialValues })` — `form.values`/`form.errors`
+  выводятся из `schema` типами (без ручного `TField`), значения полей могут
+  быть не только `string` (`number`/`boolean`/`string[]`), валидация идёт по
+  пайплайну `sync → async(на поле) → resolver(на форму) → server`, а сервер
+  ошибки `{ field, code }[]` автоматически маппятся в `form.errors`/`form.formError`.
+- `bindForm(form, options)` — прежний API (submit handling, `schema`,
+  `resolver`, `validateOn`, `onStateChange`, `watch`...), работает без
+  изменений сигнатуры и построен поверх того же движка.
+
+Оба API автоматически проставляют accessibility-атрибуты (`aria-invalid`,
+`aria-describedby`, `role="alert"`) и переносят фокус на первое невалидное
+поле после неуспешного submit — это не опция, а поведение "из коробки"
+(см. раздел [Accessibility](#accessibility)).
 
 Зачем: чтобы не дублировать в каждой форме одинаковый код —
-`preventDefault`, сбор `FormData`, проверку полей и regex,
-показ/скрытие текста ошибки. Отправка по Enter работает "из коробки",
+`preventDefault`, сбор `FormData`, проверку полей, показ/скрытие ошибок,
+доступность и фокус-менеджмент. Отправка по Enter работает "из коробки",
 т.к. используется стандартное поведение `<form>`.
 
 ## Установка
@@ -20,7 +30,153 @@
 npm install @chepchik/bind-form
 ```
 
-## Использование
+## Typed forms
+
+```ts
+import { createForm } from "@chepchik/bind-form";
+
+const form = document.querySelector("form")!;
+
+const handle = createForm(form, {
+	schema: {
+		name: { required: "Введите имя" },
+		age: { type: "number", min: { value: 18, message: "Минимум 18" } },
+		agree: { type: "checkbox", required: "Нужно согласие" },
+	},
+	initialValues: { age: 18 },
+	onSubmit: async (values) => {
+		// values.name: string, values.age: number, values.agree: boolean —
+		// выведено из schema, без ручного указания generic-параметра.
+		await api.register(values);
+	},
+});
+
+handle.getValues().age; // number
+handle.setValue("age", 21); // типизировано по конкретному полю
+
+// позже, при размонтировании:
+handle();
+```
+
+`FieldSchema.type` определяет, как строковое значение `FormData` приводится
+к типу `form.values[field]`:
+
+- `"text"` (по умолчанию) → `string`
+- `"number"` → `number` (непарсибельное значение — ошибка валидации, а не `NaN`)
+- `"checkbox"` → `boolean`
+- `"multiselect"` → `string[]` (все значения `name`, например группа чекбоксов)
+
+Свой парсинг/сериализация — через `parse`/`serialize` в `FieldSchema` вместо `type`.
+
+## Validation pipeline
+
+```
+submit
+  │
+  ▼
+sync (required/pattern/minLength/maxLength/min/max)  — на каждое поле
+  │  ошибка → стоп для этого поля, async не запускается (REQ-006)
+  ▼
+async (per field, например uniqueness-проверка)
+  │
+  ▼
+resolver (form-level, только для полей без ошибок sync/async)
+  │
+  ▼
+onSubmit(values) — если ошибок нет
+  │  бросает FormSubmitError → server-стадия
+  ▼
+server errors → form.errors / form.formError
+```
+
+```ts
+const handle = createForm(form, {
+	schema: {
+		email: {
+			required: "Введите email",
+			pattern: { value: /.+@.+/, message: "Неверный формат" },
+			// async выполняется, только если email прошёл sync-проверки выше.
+			async: async (value) => ((await api.isEmailTaken(value)) ? "Email уже занят" : undefined),
+		},
+	},
+	onSubmit: async (values) => api.register(values),
+});
+```
+
+Если поле не прошло sync-стадию, его `async`-правило не вызывается вообще —
+это можно проверить шпионом/счётчиком вызовов (см. `tests/validation.test.ts`).
+
+## Server errors
+
+```ts
+import { createForm, FormSubmitError } from "@chepchik/bind-form";
+
+const handle = createForm(form, {
+	schema: { email: {} },
+	errorMessages: { EMAIL_EXISTS: "Такой email уже зарегистрирован" },
+	onSubmit: async (values) => {
+		const res = await fetch("/api/register", { method: "POST", body: JSON.stringify(values) });
+		if (res.status === 422) {
+			throw new FormSubmitError(await res.json()); // [{ field: "email", code: "EMAIL_EXISTS" }]
+		}
+	},
+});
+```
+
+- `code` резолвится через `errorMessages`, при отсутствии — фолбэк на `message`,
+  затем на сырой `code`, затем на общий fallback-текст.
+- Ошибка с `field`, которого нет в `schema` (или без `field` вообще), попадает
+  в `handle.getState().formError`, а не теряется и не бросает исключение.
+
+## Accessibility
+
+Применяется автоматически и к `createForm`, и к `bindForm` — не требует
+настройки со стороны потребителя:
+
+```html
+<input name="email" aria-invalid="true" aria-describedby="email-error" />
+<span data-error-for="email" id="email-error" role="alert" aria-live="polite">
+	Неверный формат
+</span>
+```
+
+- `aria-invalid="true"` появляется на поле при ошибке и снимается, когда её нет.
+- `[data-error-for="<field>"]` получает `role="alert"`, стабильный `id`
+  (генерируется как `${field}-error`, если отсутствует), и этот `id`
+  прописывается в `aria-describedby` поля.
+- После неуспешного submit фокус переходит на первое невалидное поле в
+  DOM-порядке (`form.elements`, а не порядок ключей `schema`) — обычная
+  Tab/Shift+Tab навигация после этого не нарушается (никакого focus trap).
+- В dev-режиме (`process.env.NODE_ENV !== "production"`) в консоль выводится
+  предупреждение, если у поля схемы нет связанного `<label>` (`for`/wrapping
+  `<label>`/`aria-label`/`aria-labelledby`). Проверка не попадает в
+  production-сборку по стоимости выполнения — только вызов вырезается вручную
+  через `NODE_ENV`, поэтому убедитесь, что ваш бандлер минифицирует `if (false)`.
+
+## Migrating from `bindForm` to `createForm`
+
+`bindForm` продолжает работать без изменений — мигрировать не обязательно.
+
+| `bindForm` | `createForm` |
+|---|---|
+| `schema: Record<TField, FieldRule>` | `schema: Record<TField, FieldSchema<TValue>>` (+ `type`/`parse`/`serialize`/`async`) |
+| `values: FormValues<TField>` (всегда `string`) | `values: InferValues<TSchema>` (типы из схемы) |
+| нет серверных ошибок | `errorMessages` + `FormSubmitError` → `form.errors`/`form.formError` |
+| `resolver` — form-level async | тот же `resolver`, плюс per-field `async` в схеме |
+| нет accessibility-контракта | `aria-*`/`role="alert"`/focus management — из коробки (и для `bindForm` тоже) |
+
+## Testing
+
+```sh
+npm run test            # tsc --noEmit && vitest run
+npm run test:coverage   # то же самое + отчёт покрытия, порог 100% по lines/branches/functions/statements
+```
+
+Любой вклад в пакет должен сохранять 100% покрытие (`vitest.config.ts`,
+`coverage.thresholds`) — `vitest run --coverage` завершается с ненулевым
+кодом, если покрытие `src/**/*.ts` падает ниже 100% хотя бы по одной метрике.
+
+## Пример использования `bindForm`
 
 ```ts
 import { bindForm } from "@chepchik/bind-form";
@@ -51,7 +207,7 @@ formHandle();
 Для показа ошибки конкретного поля при `validateOn` добавьте рядом с полем
 элемент `[data-error-for="<name>"]` (`<span data-error-for="email" hidden></span>`).
 
-## Пример: сложная форма
+## Пример: сложная форма (`bindForm`)
 
 Более развёрнутый пример, использующий все возможности: `resolver` для
 асинхронной проверки, `onStateChange` для индикации состояния, `watch` для
@@ -117,6 +273,27 @@ resetButton.addEventListener("click", () => handle.reset());
 
 ## API
 
+### `createForm<TSchema>(form, options): FormHandle<InferValues<TSchema>, keyof TSchema & string>`
+
+- `options.schema: Record<TField, FieldSchema<TValue>>` — валидация + типизация.
+  - Наследует `required`/`pattern`/`minLength`/`maxLength`/`min`/`max` из `FieldRule`.
+  - `type?: "text" | "number" | "checkbox" | "multiselect"` — как приводится значение.
+  - `parse?`/`serialize?` — свой парсинг/сериализация вместо `type`.
+  - `validate?: (value: TValue, values) => string | undefined` — sync, после built-in правил.
+  - `async?: (value: TValue, values) => string | undefined | Promise<...>` — только если sync прошёл (REQ-006).
+- `options.initialValues?: Partial<InferValues<TSchema>>` — записываются в поля формы при вызове `createForm`.
+- `options.errorElement?`, `options.validateOn?`, `options.resolver?`,
+  `options.onStateChange?`, `options.disableSubmitWhilePending?`,
+  `options.resetOnSuccess?` — как в `bindForm`, но типизированы по `TSchema`.
+- `options.onSubmit(values, form)` — может бросить/вернуть `FormSubmitError`
+  для server-стадии пайплайна.
+- `options.errorMessages?: Record<string, string>` — словарь `code → message`
+  для `mapServerErrors`.
+
+Возвращает `FormHandle`: `getValues()`, `setValue(field, value)`,
+`setError(field, message?)`, `setFormError(message?)`, `reset()`,
+`getState()`, `watch(field, callback)` — все типизированы по `TSchema`.
+
 ### `bindForm<TField>(form, options): BindFormHandle<TField>`
 
 - `form: HTMLFormElement` — форма, на которую вешается обработчик `submit`.
@@ -171,3 +348,10 @@ resetButton.addEventListener("click", () => handle.reset());
 - `getState(): FormState<TField>` — снимок текущего состояния формы.
 - `watch(field, callback)` — вызывать `callback(value, values)` при каждом
   изменении значения `field`. Возвращает функцию отписки.
+
+### `mapServerErrors(response, knownFields, errorMessages?)`
+
+Превращает `ServerErrorResponse` (`{ field?, code?, message? }[]`) в
+`{ fieldErrors, formError }`. Используется автоматически внутри `createForm`
+при `FormSubmitError`, но экспортируется и для ручного использования (в том
+числе вместе с `bindForm`).
