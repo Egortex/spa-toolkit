@@ -1,6 +1,6 @@
 {
 	"name": "@chepchik/dom-template",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"description": "Tiny mini-component system for the real DOM: mount an HTML string, collect [ref] elements into a typed object, and layer component()/state/composition on top — no Virtual DOM, no diffing, cleanup driven by AbortSignal.",
 	"type": "module",
 	"main": "./dist/index.js",
