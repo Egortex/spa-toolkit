@@ -1,7 +1,7 @@
 {
 	"name": "@chepchik/dom-template",
 	"version": "0.1.2",
-	"description": "Tiny helper to mount an HTML string into the DOM and collect [ref] elements into a typed object.",
+	"description": "Tiny mini-component system for the real DOM: mount an HTML string, collect [ref] elements into a typed object, and layer component()/state/composition on top — no Virtual DOM, no diffing, cleanup driven by AbortSignal.",
 	"type": "module",
 	"main": "./dist/index.js",
 	"module": "./dist/index.js",
@@ -15,18 +15,31 @@
 	"files": [
 		"dist"
 	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Egortex/spa-toolkit.git",
+		"directory": "packages/dom-template"
+	},
 	"sideEffects": false,
 	"scripts": {
 		"build": "vite build",
-		"dev": "vite build --watch"
+		"dev": "vite build --watch",
+		"test": "tsc --noEmit && vitest run",
+		"test:coverage": "tsc --noEmit && vitest run --coverage"
 	},
 	"keywords": [
 		"dom",
 		"template",
-		"spa"
+		"spa",
+		"component",
+		"state",
+		"abortsignal"
 	],
 	"license": "MIT",
 	"devDependencies": {
+		"@vitest/coverage-v8": "^5.0.0",
+		"jsdom": "^30.0.1",
+		"vitest": "^5.0.0",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.16",
 		"vite-plugin-dts": "^5.0.2"
