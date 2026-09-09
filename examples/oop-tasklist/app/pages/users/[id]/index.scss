@@ -1,0 +1,41 @@
+.user-detail {
+	padding: 2rem;
+	border-radius: 16px;
+	background-color: var(--color-surface);
+	border: 1px solid var(--color-border);
+
+	dl {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 0.5rem 1rem;
+		margin: 1rem 0 1.5rem;
+	}
+
+	dt {
+		color: var(--color-text-muted);
+	}
+
+	dd {
+		margin: 0;
+	}
+
+	&__skeleton-heading {
+		display: inline-block;
+		width: 12rem;
+		height: 2rem;
+	}
+
+	&__skeleton-text {
+		display: inline-block;
+		width: 10rem;
+		height: 1.1rem;
+	}
+
+	&__back {
+		color: var(--color-accent);
+
+		&:hover {
+			color: var(--color-accent-hover);
+		}
+	}
+}

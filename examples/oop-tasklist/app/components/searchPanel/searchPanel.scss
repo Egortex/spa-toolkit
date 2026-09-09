@@ -1,0 +1,19 @@
+.search-panel {
+	display: flex;
+	gap: 0.75rem;
+	margin-bottom: 1.5rem;
+
+	input {
+		flex: 1;
+	}
+
+	#searchButton {
+		background-color: var(--color-surface-hover);
+		color: var(--color-text);
+		border: 1px solid var(--color-border);
+
+		&:hover {
+			background-color: var(--color-border);
+		}
+	}
+}

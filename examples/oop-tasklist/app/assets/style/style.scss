@@ -1,0 +1,164 @@
+:root {
+	font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+	line-height: 1.5;
+	font-weight: 400;
+	color-scheme: dark;
+
+	--color-bg: #0f172a;
+	--color-surface: #1e293b;
+	--color-surface-hover: #273449;
+	--color-border: #334155;
+	--color-text: #e2e8f0;
+	--color-text-muted: #94a3b8;
+	--color-accent: #6366f1;
+	--color-accent-hover: #818cf8;
+	--color-danger: #f87171;
+
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background-color: var(--color-bg);
+	color: var(--color-text);
+}
+
+a {
+	color: var(--color-accent);
+	text-decoration: none;
+	transition: color 0.2s ease;
+
+	&:hover {
+		color: var(--color-accent-hover);
+	}
+}
+
+h1 {
+	font-size: 2rem;
+	line-height: 1.2;
+	margin: 0 0 1rem;
+}
+
+button {
+	font-family: inherit;
+	font-size: 1em;
+	font-weight: 500;
+	border-radius: 8px;
+	border: 1px solid transparent;
+	padding: 0.6em 1.2em;
+	background-color: var(--color-accent);
+	color: #fff;
+	cursor: pointer;
+	transition:
+		background-color 0.2s ease,
+		border-color 0.2s ease;
+
+	&:hover {
+		background-color: var(--color-accent-hover);
+	}
+
+	&:focus,
+	&:focus-visible {
+		outline: 2px solid var(--color-accent-hover);
+		outline-offset: 2px;
+	}
+}
+
+input,
+select {
+	font-family: inherit;
+	font-size: 1em;
+	border-radius: 8px;
+	border: 1px solid var(--color-border);
+	background-color: var(--color-surface);
+	color: var(--color-text);
+	padding: 0.6em 0.8em;
+
+	&:focus,
+	&:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 1px;
+	}
+}
+
+/* --- Состояние навигации --- */
+
+/* Тонкий прогресс-бар сверху вместо затемнения всего #app во время загрузки. */
+.nav-progress {
+	position: fixed;
+	top: 0;
+	left: 0;
+	height: 3px;
+	width: 0;
+	background-color: var(--color-accent);
+	opacity: 0;
+	z-index: 100;
+	transition:
+		width 0.2s ease,
+		opacity 0.2s ease;
+}
+
+body[data-nav-status="loading"] .nav-progress {
+	width: 80%;
+	opacity: 1;
+	transition:
+		width 6s cubic-bezier(0.1, 0.5, 0.1, 1),
+		opacity 0.2s ease;
+}
+
+body[data-nav-status="success"] .nav-progress,
+body[data-nav-status="error"] .nav-progress {
+	width: 100%;
+	opacity: 0;
+	transition:
+		width 0.15s ease,
+		opacity 0.4s ease 0.1s;
+}
+
+body[data-nav-status="loading"]:not(.has-skeleton) #app {
+	pointer-events: none;
+}
+
+/* --- Skeleton-заглушки на время загрузки данных страницы --- */
+
+.skeleton {
+	display: block;
+	border-radius: 8px;
+	background: linear-gradient(
+		90deg,
+		var(--color-surface) 25%,
+		var(--color-surface-hover) 50%,
+		var(--color-surface) 75%
+	);
+	background-size: 200% 100%;
+	animation: skeleton-shimmer 1.4s ease-in-out infinite;
+	color: transparent;
+}
+
+@keyframes skeleton-shimmer {
+	0% {
+		background-position: 200% 0;
+	}
+	100% {
+		background-position: -200% 0;
+	}
+}
+
+body[data-nav-status="error"] #app::before {
+	content: "Не удалось загрузить страницу";
+	display: block;
+	margin-bottom: 1rem;
+	padding: 0.75rem 1rem;
+	border-radius: 8px;
+	background-color: rgba(248, 113, 113, 0.15);
+	border: 1px solid var(--color-danger);
+	color: var(--color-danger);
+}
