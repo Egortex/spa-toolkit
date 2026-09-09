@@ -1,11 +1,14 @@
-name: Publish package to npm
+name: CI & Publish
 
 on:
   push:
+    branches: [main]
     tags:
       - "spa-router-v*"
       - "bind-form-v*"
       - "dom-template-v*"
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       package:
@@ -26,8 +29,115 @@ on:
           - minor
           - major
 
+permissions:
+  contents: read
+
 jobs:
+  # Определяет, какие из трёх пакетов затронуты пушем/PR, чтобы ниже
+  # запустить тесты только для них, а не для всех трёх сразу.
+  changes:
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      spa-router: ${{ steps.filter.outputs.spa-router }}
+      bind-form: ${{ steps.filter.outputs.bind-form }}
+      dom-template: ${{ steps.filter.outputs.dom-template }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            spa-router:
+              - 'packages/spa-router/**'
+              - 'package-lock.json'
+              - 'scripts/generate-coverage-badge.mjs'
+            bind-form:
+              - 'packages/bind-form/**'
+              - 'package-lock.json'
+              - 'scripts/generate-coverage-badge.mjs'
+            dom-template:
+              - 'packages/dom-template/**'
+              - 'package-lock.json'
+              - 'scripts/generate-coverage-badge.mjs'
+
+  test-spa-router:
+    needs: changes
+    if: needs.changes.outputs.spa-router == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: spa-router-ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/spa-router
+      - run: npm run test:coverage --workspace=packages/spa-router
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spa-router-coverage-${{ github.run_id }}
+          path: packages/spa-router/coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  test-bind-form:
+    needs: changes
+    if: needs.changes.outputs.bind-form == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: bind-form-ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/bind-form
+      - run: npm run test:coverage --workspace=packages/bind-form
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bind-form-coverage-${{ github.run_id }}
+          path: packages/bind-form/coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  test-dom-template:
+    needs: changes
+    if: needs.changes.outputs.dom-template == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: dom-template-ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/dom-template
+      - run: npm run test:coverage --workspace=packages/dom-template
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dom-template-coverage-${{ github.run_id }}
+          path: packages/dom-template/coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
   publish:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -57,6 +167,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Trusted Publishing (npm OIDC) требует npm >= 11.5.1 — версия, идущая
+      # в комплекте с actions/setup-node, может быть старее.
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      # Обязательно до бампа версии/создания тега: если тесты упадут, ни коммит
+      # с версией, ни тег не должны появиться в истории — падение workflow не
+      # должно оставлять за собой "битый" релизный тег.
+      - name: Test
+        run: npm run test:coverage --workspace=packages/${{ steps.package.outputs.name }}
+
       - name: Bump version, commit and tag
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -72,13 +193,21 @@ jobs:
           git tag "${tag}"
           git push origin HEAD:main "${tag}"
 
-      - name: Test
-        run: npm run test:coverage --workspace=packages/${{ steps.package.outputs.name }}
+      - name: Update coverage badge
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          node scripts/generate-coverage-badge.mjs packages/${{ steps.package.outputs.name }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "packages/${{ steps.package.outputs.name }}/coverage-badge.json"
+          git diff --staged --quiet || git commit -m "chore(${{ steps.package.outputs.name }}): update coverage badge [skip ci]"
+          git push origin HEAD:main
 
       - name: Build
         run: npm run build --workspace=packages/${{ steps.package.outputs.name }}
 
+      # Аутентификация через Trusted Publisher (OIDC) — NPM_TOKEN больше не нужен.
+      # Требует, чтобы для пакета на npmjs.com был настроен Trusted Publisher
+      # (Settings → Trusted Publisher → GitHub Actions → этот repo/workflow).
       - name: Publish
-        run: npm publish --access public --workspace=packages/${{ steps.package.outputs.name }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance --workspace=packages/${{ steps.package.outputs.name }}
