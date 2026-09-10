@@ -16,6 +16,9 @@ dist-ssr
 
 coverage
 
+# Generated benchmark results (re-run benchmarks/harness to regenerate)
+benchmarks/results/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

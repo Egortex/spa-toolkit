@@ -1,0 +1,17 @@
+{
+	"name": "@bench/harness",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"bench": "tsx src/runner.ts",
+		"bench:all": "tsx src/runAll.ts",
+		"report": "tsx src/report.ts"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.2",
+		"playwright": "^1.49.0",
+		"tsx": "^4.22.4",
+		"typescript": "^6.0.3"
+	}
+}
