@@ -1,14 +1,6 @@
 name: CI & Publish
 
 on:
-  push:
-    branches: [main]
-    tags:
-      - "spa-router-v*"
-      - "bind-form-v*"
-      - "dom-template-v*"
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       package:
@@ -33,114 +25,7 @@ permissions:
   contents: read
 
 jobs:
-  # Определяет, какие из трёх пакетов затронуты пушем/PR, чтобы ниже
-  # запустить тесты только для них, а не для всех трёх сразу.
-  changes:
-    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    outputs:
-      spa-router: ${{ steps.filter.outputs.spa-router }}
-      bind-form: ${{ steps.filter.outputs.bind-form }}
-      dom-template: ${{ steps.filter.outputs.dom-template }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            spa-router:
-              - 'packages/spa-router/**'
-              - 'pnpm-lock.yaml'
-              - 'scripts/generate-coverage-badge.mjs'
-            bind-form:
-              - 'packages/bind-form/**'
-              - 'pnpm-lock.yaml'
-              - 'scripts/generate-coverage-badge.mjs'
-            dom-template:
-              - 'packages/dom-template/**'
-              - 'pnpm-lock.yaml'
-              - 'scripts/generate-coverage-badge.mjs'
-
-  test-spa-router:
-    needs: changes
-    if: needs.changes.outputs.spa-router == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    concurrency:
-      group: spa-router-ci-${{ github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @chepchik/spa-router run build
-      - run: pnpm --filter @chepchik/spa-router run test:coverage
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: spa-router-coverage-${{ github.run_id }}
-          path: packages/spa-router/coverage/
-          if-no-files-found: ignore
-          retention-days: 14
-
-  test-bind-form:
-    needs: changes
-    if: needs.changes.outputs.bind-form == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    concurrency:
-      group: bind-form-ci-${{ github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @chepchik/bind-form run build
-      - run: pnpm --filter @chepchik/bind-form run test:coverage
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bind-form-coverage-${{ github.run_id }}
-          path: packages/bind-form/coverage/
-          if-no-files-found: ignore
-          retention-days: 14
-
-  test-dom-template:
-    needs: changes
-    if: needs.changes.outputs.dom-template == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    concurrency:
-      group: dom-template-ci-${{ github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @chepchik/dom-template run build
-      - run: pnpm --filter @chepchik/dom-template run test:coverage
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dom-template-coverage-${{ github.run_id }}
-          path: packages/dom-template/coverage/
-          if-no-files-found: ignore
-          retention-days: 14
-
   publish:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -161,14 +46,7 @@ jobs:
 
       - name: Resolve package
         id: package
-        run: |
-          if [ -n "${{ inputs.package }}" ]; then
-            name="${{ inputs.package }}"
-          else
-            tag="${GITHUB_REF_NAME}"
-            name="${tag%-v*}"
-          fi
-          echo "name=${name}" >> "$GITHUB_OUTPUT"
+        run: echo "name=${{ inputs.package }}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -186,7 +64,6 @@ jobs:
         run: pnpm --filter @chepchik/${{ steps.package.outputs.name }} run test:coverage
 
       - name: Bump version, commit and tag
-        if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -201,7 +78,6 @@ jobs:
           git push origin HEAD:main "${tag}"
 
       - name: Update coverage badge
-        if: github.event_name == 'workflow_dispatch'
         run: |
           node scripts/generate-coverage-badge.mjs packages/${{ steps.package.outputs.name }}
           git config user.name "github-actions[bot]"
