@@ -1,3 +1,4 @@
+import { matchPath } from "./match";
 import type { RouteDefinition } from "./types";
 
 /** Delay before a hover-triggered prefetch — cancelled if the cursor leaves the link sooner. */
@@ -6,7 +7,7 @@ export const PREFETCH_HOVER_DELAY_MS = 120;
 /** Right after start, loads the JS chunks of routes with `preload: true` (except the current one), without waiting for a click. */
 export function preloadCriticalRoutes(routes: RouteDefinition[]): void {
 	for (const route of routes) {
-		if (!route.preload || route.path === location.pathname) continue;
+		if (!route.preload || matchPath(route.path, location.pathname)) continue;
 		void route.load().catch(() => {
 			// Best-effort preload: errors are silently ignored
 		});
@@ -47,7 +48,18 @@ export class HoverPrefetcher {
 		}, PREFETCH_HOVER_DELAY_MS);
 	};
 
-	private onMouseOut = (): void => {
+	private onMouseOut = (event: MouseEvent): void => {
+		const target = event.target;
+		if (!(target instanceof Element)) return;
+		const link = target.closest("a");
+		if (!link) return;
+
+		// A mouseout fired while moving between elements nested inside the same
+		// link (e.g. onto an icon or a span) must not reset the debounce — only
+		// clear it once the pointer actually leaves the link.
+		const related = event.relatedTarget;
+		if (related instanceof Node && link.contains(related)) return;
+
 		if (this.timer) {
 			clearTimeout(this.timer);
 			this.timer = null;

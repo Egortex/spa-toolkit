@@ -19,6 +19,7 @@ export function toLayoutChain(layout: LayoutLoader | LayoutLoader[] | undefined)
  */
 export class LayoutChainManager {
   private chain: MountedLayout[] = [];
+  private queue: Promise<unknown> = Promise.resolve();
 
   /** Length of the common prefix of the current and new chains (compared by `LayoutLoader` references). */
   commonPrefixLength(layoutChain: LayoutLoader[]): number {
@@ -57,22 +58,54 @@ export class LayoutChainManager {
    *
    * `onUnmountTail` is called before unmounting the "tail" — gives the router a
    * chance to clean up the current page before its layouts' markup is cleared.
+   *
+   * `isActive` is polled before every DOM mutation. Concurrent `mount()` calls
+   * (e.g. from a superseding navigation starting while this one is still awaiting
+   * a lazy layout import) are serialized on an internal queue — only one call's
+   * body runs at a time, so `chain` is never observed or mutated inconsistently.
+   * If `isActive` returns false at the moment this call reaches the front of the
+   * queue, or between mounting successive layouts in the chain, it stops without
+   * touching the DOM or `chain` and returns `null`.
    */
-  async mount(
+  mount(
     layoutChain: LayoutLoader[],
     common: number,
     ctx: RouteContext,
     layoutModulePromises: Map<LayoutLoader, ReturnType<LayoutLoader>>,
     container: HTMLElement,
     onUnmountTail: () => void,
-  ): Promise<HTMLElement> {
+    isActive: () => boolean,
+  ): Promise<HTMLElement | null> {
+    const run = this.queue.then(() =>
+      this.mountExclusive(layoutChain, common, ctx, layoutModulePromises, container, onUnmountTail, isActive),
+    );
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async mountExclusive(
+    layoutChain: LayoutLoader[],
+    common: number,
+    ctx: RouteContext,
+    layoutModulePromises: Map<LayoutLoader, ReturnType<LayoutLoader>>,
+    container: HTMLElement,
+    onUnmountTail: () => void,
+    isActive: () => boolean,
+  ): Promise<HTMLElement | null> {
+    if (!isActive()) return null;
+
     if (common < this.chain.length) {
       onUnmountTail();
       for (let i = this.chain.length - 1; i >= common; i--) {
         this.chain[i].result.cleanup?.();
       }
       this.chain.length = common;
+      // The disposed tail's DOM nodes live inside the outlet of the last reused
+      // layout (or `container`, if nothing is reused) — clear it here, not just
+      // lazily before mounting new content, since the new chain may end exactly
+      // at `common` (no new layouts to mount, nothing would otherwise clear it).
       if (common === 0) container.innerHTML = "";
+      else this.chain[common - 1].result.outlet.innerHTML = "";
     }
 
     for (let i = 0; i < common; i++) {
@@ -82,9 +115,10 @@ export class LayoutChainManager {
     let outlet = common > 0 ? this.chain[common - 1].result.outlet : container;
 
     for (let i = common; i < layoutChain.length; i++) {
-      outlet.innerHTML = "";
       const loader = layoutChain[i];
       const module = await layoutModulePromises.get(loader)!;
+      if (!isActive()) return null;
+      outlet.innerHTML = "";
       const result = module.default.render(outlet, ctx);
       this.chain.push({ loader, result });
       outlet = result.outlet;

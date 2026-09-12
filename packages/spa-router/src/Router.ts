@@ -150,7 +150,6 @@ export class Router<Routes extends RouteMap = RouteMap> {
     const path = template
       ? buildRoutePath(template, (params ?? {}) as NamedRouteParams<Routes, RouteName<Routes>>)
       : pathOrName;
-    if (this.cache.has(path)) return;
     try {
       const resolved = this.resolveWithRedirects(new URL(path, location.href));
       const module = await resolved.route.load();
@@ -160,13 +159,16 @@ export class Router<Routes extends RouteMap = RouteMap> {
       const navigation = this.createNavigation(0, location.href, resolved, controller.signal);
       const ctx = toRouteContext(navigation);
       if (isDeclarativeLoader(pageLoader)) {
+        const key = pageLoader.key(ctx);
+        if (this.queryCache.get(key)?.state === "fresh") return;
         await query({
-          key: pageLoader.key(ctx),
+          key,
           loader: () => pageLoader.load(ctx),
           staleTime: pageLoader.staleTime,
           cache: this.queryCache,
         });
       } else {
+        if (this.cache.has(path)) return;
         this.cache.set(path, await pageLoader(ctx));
       }
     } catch {
@@ -335,8 +337,9 @@ export class Router<Routes extends RouteMap = RouteMap> {
             layoutModules,
             this.container,
             () => this.disposePage(navigation!),
+            () => navigation!.id === this.currentNavigationId,
           );
-          if (!this.isActive(navigation)) return;
+          if (!skeletonContainer || !this.isActive(navigation)) return;
           this.disposePage(navigation);
           skeletonContainer.innerHTML = "";
           document.body.classList.add("has-skeleton");
@@ -379,8 +382,9 @@ export class Router<Routes extends RouteMap = RouteMap> {
           layoutModules,
           this.container,
           () => this.disposePage(navigation!),
+          () => navigation!.id === this.currentNavigationId,
         );
-        if (!this.isActive(navigation!)) return;
+        if (!pageContainer || !this.isActive(navigation!)) return;
         this.disposePage(navigation!);
         pageContainer.innerHTML = "";
         document.body.classList.remove("has-skeleton");
