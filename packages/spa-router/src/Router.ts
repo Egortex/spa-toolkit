@@ -9,7 +9,6 @@ import { QueryCache, type CacheKey } from "./queryCache";
 import { query } from "./query";
 import { isDeferredValue, type DeferredValue } from "./composeLoaders";
 import {
-  createLinkedAbortController,
   isDeclarativeLoader,
   snapshotLocation,
   toRouteContext,
@@ -309,14 +308,9 @@ export class Router<Routes extends RouteMap = RouteMap> {
 
       if (page.guard) {
         this.setPhase("guard", navigation);
-        const guardController = createLinkedAbortController(navigation.signal);
-        try {
-          if (!await page.guard(toRouteContext(navigation, guardController.signal))) {
-            this.setPhase("cancel", navigation);
-            return;
-          }
-        } finally {
-          guardController.abort();
+        if (!await page.guard(toRouteContext(navigation))) {
+          this.setPhase("cancel", navigation);
+          return;
         }
       }
       if (!this.isActive(navigation)) return;
@@ -346,27 +340,14 @@ export class Router<Routes extends RouteMap = RouteMap> {
           page.skeleton(skeletonContainer);
         }
 
-        const loaderController = createLinkedAbortController(navigation.signal);
-        try {
-          const result = await this.executeLoader(
-            page.loader,
-            toRouteContext(navigation, loaderController.signal),
-            resolved.path,
-            navigation,
-          );
-          data = result.data;
-          background = result.background;
-          if (background) void background.then(
-            () => loaderController.abort(),
-            () => loaderController.abort(),
-          );
-          else loaderController.abort();
-
-        } catch (error) {
-          loaderController.abort();
-          throw error;
-        }
-
+        const result = await this.executeLoader(
+          page.loader,
+          toRouteContext(navigation),
+          resolved.path,
+          navigation,
+        );
+        data = result.data;
+        background = result.background;
       }
       if (!this.isActive(navigation)) return;
 

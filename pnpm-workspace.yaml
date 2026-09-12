@@ -3,3 +3,4 @@ packages:
   - "examples/*"
   - "benchmarks/harness"
   - "benchmarks/apps/*"
+  - "e2e/*"

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fc from "fast-check";
 import { Router } from "../src/Router";
 import { defer } from "../src/composeLoaders";
 import { defineRoutes } from "../src/defineRoutes";
@@ -84,6 +85,45 @@ describe("Router", () => {
     await completed;
     expect(container.textContent).toBe("fast");
     expect(phases.filter((phase) => phase === "cancel")).toHaveLength(1);
+  });
+
+  it("a stale navigation's loader resolving after the active one has already committed and rendered must not overwrite the DOM", async () => {
+    // A pinned, fully deterministic worst-case ordering (found while building
+    // a fast-check `fc.scheduler()`-based model test for the router's
+    // navigation lifecycle — see Router.model.property.test.ts): nav0 starts
+    // and gets far enough to call its own loader *before* nav1 supersedes it,
+    // but nav0's loader only resolves *after* nav1 has fully committed and
+    // rendered. If the router's isActive() guards around the commit/render
+    // path were ever weakened, nav0's late data would land on screen last and
+    // silently overwrite nav1's already-rendered page.
+    //
+    // Task registration order is fixed by this test's own call order:
+    // 1=load-n0, 2=data-n0 (registered once load-n0 resolves, below), then
+    // 3=load-n1, 4=data-n1 once nav1 is started. `schedulerFor` pins the
+    // *resolution* order to 1, 3, 4, 2 — i.e. nav0's data resolves dead last.
+    const s = fc.schedulerFor([1, 3, 4, 2]);
+    const routes: RouteDefinition[] = [0, 1].map((i) => {
+      const page: PageModule = {
+        loader: async () => s.schedule(Promise.resolve(i), `data-n${i}`),
+        render(container, data) {
+          container.textContent = `page-${data}`;
+        },
+      };
+      return { path: `/n${i}`, load: () => s.schedule(Promise.resolve({ default: page }), `load-n${i}`) };
+    });
+
+    history.replaceState({}, "", "/n0");
+    const container = document.createElement("main");
+    const router = new Router(routes, container);
+
+    router.start(); // registers load-n0 (task 1)
+    await s.waitOne(); // load-n0 resolves — nav0 still current, reaches its loader, registers data-n0 (task 2)
+
+    router.navigate("/n1"); // supersedes nav0; registers load-n1 (task 3)
+    await s.waitAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(container.textContent).toBe("page-1");
   });
 
   it("uses declarative cache for prefetch, stale refresh and invalidation", async () => {

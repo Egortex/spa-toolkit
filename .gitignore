@@ -19,6 +19,12 @@ coverage
 # Generated benchmark results (re-run benchmarks/harness to regenerate)
 benchmarks/results/
 
+# Playwright E2E artifacts
+e2e/*/test-results/
+e2e/*/playwright-report/
+e2e/*/blob-report/
+e2e/*/.playwright/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

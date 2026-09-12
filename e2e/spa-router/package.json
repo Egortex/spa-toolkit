@@ -1,0 +1,21 @@
+{
+	"name": "@e2e/spa-router",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"build:router": "pnpm --filter @chepchik/spa-router build",
+		"dev": "vite",
+		"test": "pnpm run build:router && playwright test",
+		"test:headed": "pnpm run build:router && playwright test --headed"
+	},
+	"dependencies": {
+		"@chepchik/spa-router": "workspace:*"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.49.0",
+		"@types/node": "^25.9.2",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16"
+	}
+}

@@ -5,12 +5,24 @@
  */
 export async function runTransition(update: () => void | Promise<void>): Promise<void> {
   const doc = document as Document & {
-    startViewTransition?: (callback: () => void | Promise<void>) => { updateCallbackDone?: Promise<void> } | unknown;
+    startViewTransition?: (callback: () => void | Promise<void>) => {
+      updateCallbackDone?: Promise<void>;
+      ready?: Promise<void>;
+      finished?: Promise<void>;
+    } | unknown;
   };
   if (!doc.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     await update();
     return;
   }
-  const transition = doc.startViewTransition(update) as { updateCallbackDone?: Promise<void> } | undefined;
+  const transition = doc.startViewTransition(update) as
+    | { updateCallbackDone?: Promise<void>; ready?: Promise<void>; finished?: Promise<void> }
+    | undefined;
+  // `ready`/`finished` reject when a newer navigation starts its own transition
+  // before this one finishes (the browser "skips" the superseded transition).
+  // That's expected under rapid navigation and must not surface as an unhandled
+  // promise rejection — only `updateCallbackDone` (the DOM update itself) matters here.
+  transition?.ready?.catch(() => undefined);
+  transition?.finished?.catch(() => undefined);
   await transition?.updateCallbackDone;
 }
