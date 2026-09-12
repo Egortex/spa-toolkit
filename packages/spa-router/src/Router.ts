@@ -248,13 +248,18 @@ export class Router<Routes extends RouteMap = RouteMap> {
     navigation: Navigation,
   ): Promise<{ data: unknown; background?: Promise<unknown> }> {
     if (isDeclarativeLoader(pageLoader)) {
+      // Declarative loaders are keyed by query, not by navigation: `query()`
+      // dedupes concurrent calls for the same key onto one shared underlying
+      // fetch, so that fetch may be relied on by several navigations at once
+      // (or serve a future one, via the cache). It must not be tied to any
+      // single navigation's AbortSignal — a signal scoped to `navigation`
+      // would abort (and thus fail, for every consumer sharing it) the moment
+      // *that one* navigation is superseded, even though another, still-active
+      // navigation dedup'd onto the same fetch has nothing wrong with it.
+      const sharedCtx: RouteContext = { ...ctx, signal: new AbortController().signal };
       const result = await query({
         key: pageLoader.key(ctx),
-        loader: async () => {
-          const data = await pageLoader.load(ctx);
-          if (!this.isActive(navigation)) throw new DOMException("Navigation cancelled", "AbortError");
-          return data;
-        },
+        loader: () => pageLoader.load(sharedCtx),
         staleTime: pageLoader.staleTime,
         cache: this.queryCache,
       });

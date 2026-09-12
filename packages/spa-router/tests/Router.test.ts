@@ -126,6 +126,48 @@ describe("Router", () => {
     expect(container.textContent).toBe("page-1");
   });
 
+  it("a navigation dedup'd onto another (superseded) navigation's declarative fetch must not inherit its cancellation", async () => {
+    // Two navigations to the *same* declarative-loader key (e.g. the user
+    // double-clicks a link, or clicks it again before it finishes loading):
+    // `QueryCache.fetch()` dedupes them onto one shared underlying fetch. The
+    // first one (A) then gets superseded by the second (B). Before the fix,
+    // the shared fetch was tied to A's own navigation, so A being superseded
+    // made the shared promise reject — which B, despite never having been
+    // cancelled itself, inherited as its own failure (rendering an error
+    // boundary for a perfectly normal navigation).
+    let loadCallCount = 0;
+    let resolveLoad!: (data: { id: string }) => void;
+    const page: PageModule = {
+      loader: loader({
+        key: (ctx) => ["user", ctx.params.id],
+        load: (ctx) =>
+          new Promise((resolve, reject) => {
+            loadCallCount++;
+            resolveLoad = resolve;
+            ctx.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      }),
+      render(container, data) { container.textContent = `user-${(data as { id: string }).id}`; },
+      errorBoundary(container) { container.textContent = "ERROR-BOUNDARY"; },
+    };
+    const routes: RouteDefinition[] = [{ path: "/user/:id", load: moduleOf(page) }];
+    history.replaceState({}, "", "/user/1");
+    const container = document.createElement("main");
+    const router = new Router(routes, container);
+    const statuses: string[] = [];
+    router.onStatusChange((status) => statuses.push(status));
+
+    router.start(); // navigation A, id=1
+    await vi.waitFor(() => expect(loadCallCount).toBe(1));
+
+    router.navigate("/user/1", { replace: true }); // navigation B, id=2, supersedes A, same cache key
+    resolveLoad({ id: "1" }); // the shared fetch eventually succeeds, after A was already superseded
+
+    await vi.waitFor(() => expect(statuses[statuses.length - 1]).toBe("success"));
+    expect(loadCallCount).toBe(1); // dedup: only one real fetch, not one per navigation
+    expect(container.textContent).toBe("user-1"); // B renders normally — no error boundary
+  });
+
   it("uses declarative cache for prefetch, stale refresh and invalidation", async () => {
     let value = 1;
     const load = vi.fn(async () => value);

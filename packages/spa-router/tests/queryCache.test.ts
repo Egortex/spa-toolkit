@@ -37,4 +37,32 @@ describe("QueryCache", () => {
     await expect(cache.fetch(["bad"], () => Promise.reject(new Error("bad")), 1)).rejects.toThrow("bad");
     expect(await cache.fetch(["bad"], () => Promise.resolve(4), 1)).toBe(4);
   });
+
+  it("invalidate() disowns an in-flight fetch: its eventual result must not repopulate the entry", async () => {
+    const cache = new QueryCache();
+    let resolve!: (value: number) => void;
+    const request = cache.fetch(["x"], () => new Promise<number>((done) => { resolve = done; }), 10_000);
+
+    cache.invalidate(["x"]);
+    resolve(1);
+    await expect(request).resolves.toBe(1); // the caller who started the fetch still gets its real result...
+    expect(cache.get(["x"])).toBeUndefined(); // ...but it must not have resurrected the invalidated entry.
+
+    // A fresh fetch requested after invalidation must not dedupe onto the disowned one.
+    const second = vi.fn(() => Promise.resolve(2));
+    expect(await cache.fetch(["x"], second, 10_000)).toBe(2);
+    expect(second).toHaveBeenCalledOnce();
+    expect(cache.get<number>(["x"])?.data).toBe(2);
+  });
+
+  it("clear() disowns every in-flight fetch: their eventual results must not repopulate the cache", async () => {
+    const cache = new QueryCache();
+    let resolve!: (value: number) => void;
+    const request = cache.fetch(["x"], () => new Promise<number>((done) => { resolve = done; }), 10_000);
+
+    cache.clear();
+    resolve(1);
+    await expect(request).resolves.toBe(1);
+    expect(cache.get(["x"])).toBeUndefined();
+  });
 });

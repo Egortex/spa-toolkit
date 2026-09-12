@@ -51,12 +51,25 @@ export class QueryCache {
 		this.entries.set(serializeCacheKey(key), { data, staleTime, updatedAt });
 	}
 
-	/** Removes an entry so its next read is expired. */
+	/**
+	 * Removes an entry so its next read is expired. Also disowns any fetch
+	 * currently in flight for this key: when that fetch eventually resolves, its
+	 * result is no longer written to the cache — otherwise a fetch started
+	 * before `invalidate()` was called could silently repopulate the entry with
+	 * a value the caller had already decided was stale, right after asking for
+	 * it to be forgotten.
+	 */
 	invalidate(key: CacheKey): void {
-		this.entries.delete(serializeCacheKey(key));
+		const serialized = serializeCacheKey(key);
+		this.entries.delete(serialized);
+		this.pending.delete(serialized);
 	}
 
-	/** Clears all query data. */
+	/**
+	 * Clears all query data, including disowning every fetch currently in
+	 * flight (see `invalidate()` — the same reasoning applies per-key here, for
+	 * all keys at once).
+	 */
 	clear(): void {
 		this.entries.clear();
 		this.pending.clear();
@@ -68,9 +81,14 @@ export class QueryCache {
 		const existing = this.pending.get(serialized) as Promise<T> | undefined;
 		if (existing) return existing;
 		const request = loader().then((data) => {
-			this.set(key, data, staleTime);
+			// Only write back if this fetch is still the one `pending` is tracking
+			// for this key — `invalidate()`/`clear()` disown it by removing it from
+			// `pending` without being able to cancel the in-flight promise itself.
+			if (this.pending.get(serialized) === request) this.set(key, data, staleTime);
 			return data;
-		}).finally(() => this.pending.delete(serialized));
+		}).finally(() => {
+			if (this.pending.get(serialized) === request) this.pending.delete(serialized);
+		});
 		this.pending.set(serialized, request);
 		return request;
 	}
